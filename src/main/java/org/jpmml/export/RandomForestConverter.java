@@ -21,6 +21,7 @@ import com.beust.jcommander.JCommander;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParameterException;
 import com.google.common.math.DoubleMath;
+import com.google.protobuf.CodedInputStream;
 import org.dmg.pmml.AbstractVisitor;
 import org.dmg.pmml.Array;
 import org.dmg.pmml.DataDictionary;
@@ -100,8 +101,11 @@ public class RandomForestConverter {
 		try {
 			System.out.println("Parsing..");
 
+			CodedInputStream cis = CodedInputStream.newInstance(is);
+			cis.setSizeLimit(Integer.MAX_VALUE);
+
 			long start = System.currentTimeMillis();
-			randomForest = Rexp.REXP.parseFrom(is);
+			randomForest = Rexp.REXP.parseFrom(cis);
 			long end = System.currentTimeMillis();
 
 			System.out.println("Parsed ProtoBuf in " + (end - start) + " ms.");
@@ -647,28 +651,35 @@ public class RandomForestConverter {
 	private Rexp.REXP field(Rexp.REXP rexp, String name){
 		Rexp.REXP names = attribute(rexp, "names");
 
+		List<String> fields = new ArrayList<String>();
+
 		for(int i = 0; i < names.getStringValueCount(); i++){
 			STRING nameValue = names.getStringValue(i);
 
 			if((name).equals(nameValue.getStrval())){
 				return rexp.getRexpValue(i);
 			}
+
+			fields.add(nameValue.getStrval());
 		}
 
-		throw new IllegalArgumentException(name);
+		throw new IllegalArgumentException("Field " + name + " not in " + fields);
 	}
 
 	static
 	private Rexp.REXP attribute(Rexp.REXP rexp, String name){
+		List<String> attributes = new ArrayList<String>();
 
 		for(int i = 0; i < rexp.getAttrNameCount(); i++){
 
 			if((rexp.getAttrName(i)).equals(name)){
 				return rexp.getAttrValue(i);
 			}
+
+			attributes.add(rexp.getAttrName(i));
 		}
 
-		throw new IllegalArgumentException(name);
+		throw new IllegalArgumentException("Attribute " + name + " not in " + attributes);
 	}
 
 	static
