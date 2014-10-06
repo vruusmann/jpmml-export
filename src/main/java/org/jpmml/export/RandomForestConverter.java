@@ -20,6 +20,8 @@ import javax.xml.transform.stream.StreamResult;
 import com.beust.jcommander.JCommander;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParameterException;
+import com.google.common.base.Function;
+import com.google.common.collect.Lists;
 import com.google.common.math.DoubleMath;
 import com.google.protobuf.CodedInputStream;
 import org.dmg.pmml.AbstractVisitor;
@@ -193,6 +195,10 @@ public class RandomForestConverter {
 			}
 		};
 
+		List<Integer> leftDaughterIndices = getIndices(leftDaughter);
+		List<Integer> rightDaughterIndices = getIndices(rightDaughter);
+		List<Integer> bestvarIndices = getIndices(bestvar);
+
 		int rows = nrnodes.getIntValue(0);
 		int columns = (int)ntree.getRealValue(0);
 
@@ -201,11 +207,11 @@ public class RandomForestConverter {
 		for(int i = 0; i < columns; i++){
 			TreeModel treeModel = encodeTreeModel(
 					MiningFunctionType.REGRESSION,
-					sublist(leftDaughter.getIntValueList(), i, rows, columns),
-					sublist(rightDaughter.getIntValueList(), i, rows, columns),
+					sublist(leftDaughterIndices, i, rows, columns),
+					sublist(rightDaughterIndices, i, rows, columns),
 					scoreEncoder,
 					sublist(nodepred.getRealValueList(), i, rows, columns),
-					sublist(bestvar.getIntValueList(), i, rows, columns),
+					sublist(bestvarIndices, i, rows, columns),
 					sublist(xbestsplit.getRealValueList(), i, rows, columns)
 				);
 
@@ -238,21 +244,25 @@ public class RandomForestConverter {
 			}
 		};
 
+		List<Integer> treemapIndices = getIndices(treemap);
+		List<Integer> nodepredIndices = getIndices(nodepred);
+		List<Integer> bestvarIndices = getIndices(bestvar);
+
 		int rows = nrnodes.getIntValue(0);
 		int columns = (int)ntree.getRealValue(0);
 
 		List<TreeModel> treeModels = new ArrayList<TreeModel>();
 
 		for(int i = 0; i < columns; i++){
-			List<Integer> daughters = sublist(treemap.getIntValueList(), i, 2 * rows, columns);
+			List<Integer> daughters = sublist(treemapIndices, i, 2 * rows, columns);
 
 			TreeModel treeModel = encodeTreeModel(
 					MiningFunctionType.CLASSIFICATION,
 					sublist(daughters, 0, rows, columns),
 					sublist(daughters, 1, rows, columns),
 					scoreEncoder,
-					sublist(nodepred.getIntValueList(), i, rows, columns),
-					sublist(bestvar.getIntValueList(), i, rows, columns),
+					sublist(nodepredIndices, i, rows, columns),
+					sublist(bestvarIndices, i, rows, columns),
 					sublist(xbestsplit.getRealValueList(), i, rows, columns)
 				);
 
@@ -741,6 +751,35 @@ public class RandomForestConverter {
 		}
 
 		throw new IllegalArgumentException("Attribute " + name + " not in " + attributes);
+	}
+
+	static
+	private List<Integer> getIndices(Rexp.REXP rexp){
+		List<Integer> intValues = rexp.getIntValueList();
+		if(intValues.size() > 0){
+			return intValues;
+		}
+
+		List<Double> realValues = rexp.getRealValueList();
+		if(realValues.size() > 0){
+			Function<Number, Integer> function = new Function<Number, Integer>(){
+
+				@Override
+				public Integer apply(Number number){
+					double value = number.doubleValue();
+
+					if(DoubleMath.isMathematicalInteger(value)){
+						return number.intValue();
+					}
+
+					throw new IllegalArgumentException();
+				}
+			};
+
+			return Lists.transform(realValues, function);
+		}
+
+		throw new IllegalArgumentException();
 	}
 
 	static
