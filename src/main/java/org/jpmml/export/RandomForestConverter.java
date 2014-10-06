@@ -185,6 +185,7 @@ public class RandomForestConverter {
 
 		for(int i = 0; i < columns; i++){
 			TreeModel treeModel = encodeTreeModel(
+					MiningFunctionType.REGRESSION,
 					sublist(leftDaughter.getIntValueList(), i, rows, columns),
 					sublist(rightDaughter.getIntValueList(), i, rows, columns),
 					scoreEncoder,
@@ -233,6 +234,7 @@ public class RandomForestConverter {
 			List<Integer> daughters = sublist(treemap.getIntValueList(), i, 2 * rows, columns);
 
 			TreeModel treeModel = encodeTreeModel(
+					MiningFunctionType.CLASSIFICATION,
 					sublist(daughters, 0, rows, columns),
 					sublist(daughters, 1, rows, columns),
 					scoreEncoder,
@@ -409,14 +411,14 @@ public class RandomForestConverter {
 		return miningSchema;
 	}
 
-	private <P extends Number> TreeModel encodeTreeModel(List<Integer> leftDaughter, List<Integer> rightDaughter, ScoreEncoder<P> scoreEncoder, List<P> nodepred, List<Integer> bestvar, List<Double> xbestsplit){
+	private <P extends Number> TreeModel encodeTreeModel(MiningFunctionType miningFunction, List<Integer> leftDaughter, List<Integer> rightDaughter, ScoreEncoder<P> scoreEncoder, List<P> nodepred, List<Integer> bestvar, List<Double> xbestsplit){
 		Node root = new Node()
 			.withId("1")
 			.withPredicate(new True());
 
 		encodeNode(root, 0, leftDaughter, rightDaughter, bestvar, xbestsplit, scoreEncoder, nodepred);
 
-		TreeModel treeModel = new TreeModel(new MiningSchema(), root, MiningFunctionType.REGRESSION)
+		TreeModel treeModel = new TreeModel(new MiningSchema(), root, miningFunction)
 			.withSplitCharacteristic(TreeModel.SplitCharacteristic.BINARY_SPLIT);
 
 		return treeModel;
