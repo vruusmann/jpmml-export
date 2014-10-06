@@ -132,22 +132,39 @@ public class RandomForestConverter {
 
 	private PMML convert(Rexp.REXP randomForest){
 		Rexp.REXP type = field(randomForest, "type");
+		Rexp.REXP forest = field(randomForest, "forest");
+
+		try {
+			Rexp.REXP terms = field(randomForest, "terms");
+
+			// The RF model was trained using the formula interface
+			initFormulaFields(terms);
+		} catch(IllegalArgumentException iae){
+			Rexp.REXP xlevels = field(forest, "xlevels");
+			Rexp.REXP ncat = field(forest, "ncat");
+
+			Rexp.REXP y;
+
+			try {
+				y = field(randomForest, "y");
+			} catch(IllegalArgumentException iaeChild){
+				y = null;
+			}
+
+			// The RF model was trained using the matrix (ie. non-formula) interface
+			initNonFormulaFields(xlevels, ncat, y);
+		}
 
 		STRING typeValue = type.getStringValue(0);
 
 		if("regression".equals(typeValue.getStrval())){
-			Rexp.REXP forest = field(randomForest, "forest");
-			Rexp.REXP terms = field(randomForest, "terms");
-
-			return convertRegression(forest, terms);
+			return convertRegression(forest);
 		} else
 
 		if("classification".equals(typeValue.getStrval())){
-			Rexp.REXP forest = field(randomForest, "forest");
 			Rexp.REXP y = field(randomForest, "y");
-			Rexp.REXP terms = field(randomForest, "terms");
 
-			return convertClassification(forest, y, terms);
+			return convertClassification(forest, y);
 		} else
 
 		{
@@ -155,9 +172,7 @@ public class RandomForestConverter {
 		}
 	}
 
-	private PMML convertRegression(Rexp.REXP forest, Rexp.REXP terms){
-		initDataFields(terms);
-
+	private PMML convertRegression(Rexp.REXP forest){
 		Rexp.REXP leftDaughter = field(forest, "leftDaughter");
 		Rexp.REXP rightDaughter = field(forest, "rightDaughter");
 		Rexp.REXP nodepred = field(forest, "nodepred");
@@ -200,9 +215,7 @@ public class RandomForestConverter {
 		return encodePMML(MiningFunctionType.REGRESSION, treeModels);
 	}
 
-	private PMML convertClassification(Rexp.REXP forest, Rexp.REXP y, Rexp.REXP terms){
-		initDataFields(terms);
-
+	private PMML convertClassification(Rexp.REXP forest, Rexp.REXP y){
 		Rexp.REXP bestvar = field(forest, "bestvar");
 		Rexp.REXP treemap = field(forest, "treemap");
 		Rexp.REXP nodepred = field(forest, "nodepred");
@@ -212,8 +225,8 @@ public class RandomForestConverter {
 		Rexp.REXP ntree = field(forest, "ntree");
 		Rexp.REXP xlevels = field(forest, "xlevels");
 
-		initActiveFields(xlevels, ncat);
 		initPredictedFields(y);
+		initActiveFields(xlevels, ncat);
 
 		ScoreEncoder<Integer> scoreEncoder = new ScoreEncoder<Integer>(){
 
@@ -311,7 +324,7 @@ public class RandomForestConverter {
 		return treeModel.withMiningSchema(miningSchema);
 	}
 
-	private void initDataFields(Rexp.REXP terms){
+	private void initFormulaFields(Rexp.REXP terms){
 		Rexp.REXP dataClasses = attribute(terms, "dataClasses");
 
 		Rexp.REXP names = attribute(dataClasses, "names");
@@ -343,6 +356,52 @@ public class RandomForestConverter {
 
 			{
 				throw new IllegalArgumentException();
+			}
+
+			this.dataFields.add(dataField);
+		}
+	}
+
+	private void initNonFormulaFields(Rexp.REXP xlevels, Rexp.REXP ncat, Rexp.REXP y){
+
+		// Dependent variable
+		{
+			DataField dataField = new DataField()
+				.withName(FieldName.create("_target"));
+
+			boolean classification = (y != null);
+
+			if(classification){
+				dataField = dataField.withDataType(DataType.STRING)
+					.withOptype(OpType.CATEGORICAL);
+			} else
+
+			{
+				dataField = dataField.withDataType(DataType.DOUBLE)
+					.withOptype(OpType.CONTINUOUS);
+			}
+
+			this.dataFields.add(dataField);
+		}
+
+		Rexp.REXP names = attribute(xlevels, "names");
+
+		// Independent variable(s)
+		for(int i = 0; i < names.getStringValueCount(); i++){
+			STRING name = names.getStringValue(i);
+
+			DataField dataField = new DataField()
+				.withName(FieldName.create(name.getStrval()));
+
+			boolean categorical = (ncat.getIntValue(i) > 1);
+			if(categorical){
+				dataField = dataField.withDataType(DataType.STRING)
+					.withOptype(OpType.CATEGORICAL);
+			} else
+
+			{
+				dataField = dataField.withDataType(DataType.DOUBLE)
+					.withOptype(OpType.CONTINUOUS);
 			}
 
 			this.dataFields.add(dataField);
