@@ -3,11 +3,6 @@
  */
 package org.jpmml.export;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -17,18 +12,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import javax.xml.transform.stream.StreamResult;
-
-import com.beust.jcommander.JCommander;
-import com.beust.jcommander.Parameter;
-import com.beust.jcommander.ParameterException;
 import com.google.common.base.Function;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.collect.Lists;
-import com.google.common.math.DoubleMath;
-import com.google.protobuf.CodedInputStream;
 import org.dmg.pmml.AbstractVisitor;
 import org.dmg.pmml.Array;
 import org.dmg.pmml.DataDictionary;
@@ -54,25 +42,10 @@ import org.dmg.pmml.TreeModel;
 import org.dmg.pmml.True;
 import org.dmg.pmml.Value;
 import org.dmg.pmml.VisitorAction;
-import org.jpmml.model.JAXBUtil;
 import rexp.Rexp;
 import rexp.Rexp.STRING;
 
-public class RandomForestConverter {
-
-	@Parameter (
-		names = "--pb-file",
-		description = "ProtoBuf input file",
-		required = true
-	)
-	private File input = null;
-
-	@Parameter (
-		names = "--pmml-file",
-		description = "PMML output file",
-		required = true
-	)
-	private File output = null;
+public class RandomForestConverter extends Converter {
 
 	private List<DataField> dataFields = new ArrayList<DataField>();
 
@@ -113,83 +86,27 @@ public class RandomForestConverter {
 		});
 
 
-	static
-	public void main(String[] args) throws Exception {
-		RandomForestConverter converter = new RandomForestConverter();
-
-		JCommander commander = new JCommander(converter);
-		commander.setProgramName(RandomForestConverter.class.getName());
-
-		try {
-			commander.parse(args);
-		} catch(ParameterException pe){
-			commander.usage();
-
-			System.exit(-1);
-		}
-
-		converter.run();
+	public RandomForestConverter(){
 	}
 
-	private RandomForestConverter(){
-	}
-
-	public void run() throws Exception {
-		this.dataFields.clear();
-
-		Rexp.REXP randomForest;
-
-		InputStream is = new FileInputStream(this.input);
+	@Override
+	public PMML convert(Rexp.REXP randomForest){
+		Rexp.REXP type = REXPUtil.field(randomForest, "type");
+		Rexp.REXP forest = REXPUtil.field(randomForest, "forest");
 
 		try {
-			System.out.println("Parsing..");
-
-			CodedInputStream cis = CodedInputStream.newInstance(is);
-			cis.setSizeLimit(Integer.MAX_VALUE);
-
-			long start = System.currentTimeMillis();
-			randomForest = Rexp.REXP.parseFrom(cis);
-			long end = System.currentTimeMillis();
-
-			System.out.println("Parsed ProtoBuf in " + (end - start) + " ms.");
-		} finally {
-			is.close();
-		}
-
-		PMML pmml = convert(randomForest);
-
-		OutputStream os = new FileOutputStream(this.output);
-
-		try {
-			System.out.println("Marshalling..");
-
-			long start = System.currentTimeMillis();
-			JAXBUtil.marshalPMML(pmml, new StreamResult(os));
-			long end = System.currentTimeMillis();
-
-			System.out.println("Marshalled PMML in " + (end - start) + " ms.");
-		} finally {
-			os.close();
-		}
-	}
-
-	private PMML convert(Rexp.REXP randomForest){
-		Rexp.REXP type = field(randomForest, "type");
-		Rexp.REXP forest = field(randomForest, "forest");
-
-		try {
-			Rexp.REXP terms = field(randomForest, "terms");
+			Rexp.REXP terms = REXPUtil.field(randomForest, "terms");
 
 			// The RF model was trained using the formula interface
 			initFormulaFields(terms);
 		} catch(IllegalArgumentException iae){
-			Rexp.REXP xlevels = field(forest, "xlevels");
-			Rexp.REXP ncat = field(forest, "ncat");
+			Rexp.REXP xlevels = REXPUtil.field(forest, "xlevels");
+			Rexp.REXP ncat = REXPUtil.field(forest, "ncat");
 
 			Rexp.REXP y;
 
 			try {
-				y = field(randomForest, "y");
+				y = REXPUtil.field(randomForest, "y");
 			} catch(IllegalArgumentException iaeChild){
 				y = null;
 			}
@@ -207,7 +124,7 @@ public class RandomForestConverter {
 		} else
 
 		if("classification".equals(typeValue.getStrval())){
-			Rexp.REXP y = field(randomForest, "y");
+			Rexp.REXP y = REXPUtil.field(randomForest, "y");
 
 			pmml = convertClassification(forest, y);
 		} else
@@ -235,15 +152,15 @@ public class RandomForestConverter {
 	}
 
 	private PMML convertRegression(Rexp.REXP forest){
-		Rexp.REXP leftDaughter = field(forest, "leftDaughter");
-		Rexp.REXP rightDaughter = field(forest, "rightDaughter");
-		Rexp.REXP nodepred = field(forest, "nodepred");
-		Rexp.REXP bestvar = field(forest, "bestvar");
-		Rexp.REXP xbestsplit = field(forest, "xbestsplit");
-		Rexp.REXP ncat = field(forest, "ncat");
-		Rexp.REXP nrnodes = field(forest, "nrnodes");
-		Rexp.REXP ntree = field(forest, "ntree");
-		Rexp.REXP xlevels = field(forest, "xlevels");
+		Rexp.REXP leftDaughter = REXPUtil.field(forest, "leftDaughter");
+		Rexp.REXP rightDaughter = REXPUtil.field(forest, "rightDaughter");
+		Rexp.REXP nodepred = REXPUtil.field(forest, "nodepred");
+		Rexp.REXP bestvar = REXPUtil.field(forest, "bestvar");
+		Rexp.REXP xbestsplit = REXPUtil.field(forest, "xbestsplit");
+		Rexp.REXP ncat = REXPUtil.field(forest, "ncat");
+		Rexp.REXP nrnodes = REXPUtil.field(forest, "nrnodes");
+		Rexp.REXP ntree = REXPUtil.field(forest, "ntree");
+		Rexp.REXP xlevels = REXPUtil.field(forest, "xlevels");
 
 		initActiveFields(xlevels, ncat);
 
@@ -282,14 +199,14 @@ public class RandomForestConverter {
 	}
 
 	private PMML convertClassification(Rexp.REXP forest, Rexp.REXP y){
-		Rexp.REXP bestvar = field(forest, "bestvar");
-		Rexp.REXP treemap = field(forest, "treemap");
-		Rexp.REXP nodepred = field(forest, "nodepred");
-		Rexp.REXP xbestsplit = field(forest, "xbestsplit");
-		Rexp.REXP ncat = field(forest, "ncat");
-		Rexp.REXP nrnodes = field(forest, "nrnodes");
-		Rexp.REXP ntree = field(forest, "ntree");
-		Rexp.REXP xlevels = field(forest, "xlevels");
+		Rexp.REXP bestvar = REXPUtil.field(forest, "bestvar");
+		Rexp.REXP treemap = REXPUtil.field(forest, "treemap");
+		Rexp.REXP nodepred = REXPUtil.field(forest, "nodepred");
+		Rexp.REXP xbestsplit = REXPUtil.field(forest, "xbestsplit");
+		Rexp.REXP ncat = REXPUtil.field(forest, "ncat");
+		Rexp.REXP nrnodes = REXPUtil.field(forest, "nrnodes");
+		Rexp.REXP ntree = REXPUtil.field(forest, "ntree");
+		Rexp.REXP xlevels = REXPUtil.field(forest, "xlevels");
 
 		initPredictedFields(y);
 		initActiveFields(xlevels, ncat);
@@ -395,9 +312,9 @@ public class RandomForestConverter {
 	}
 
 	private void initFormulaFields(Rexp.REXP terms){
-		Rexp.REXP dataClasses = attribute(terms, "dataClasses");
+		Rexp.REXP dataClasses = REXPUtil.attribute(terms, "dataClasses");
 
-		Rexp.REXP names = attribute(dataClasses, "names");
+		Rexp.REXP names = REXPUtil.attribute(dataClasses, "names");
 
 		for(int i = 0; i < names.getStringValueCount(); i++){
 			STRING name = names.getStringValue(i);
@@ -449,7 +366,7 @@ public class RandomForestConverter {
 			this.dataFields.add(dataField);
 		}
 
-		Rexp.REXP names = attribute(xlevels, "names");
+		Rexp.REXP names = REXPUtil.attribute(xlevels, "names");
 
 		// Independent variable(s)
 		for(int i = 0; i < names.getStringValueCount(); i++){
@@ -515,7 +432,7 @@ public class RandomForestConverter {
 
 		List<Value> values = dataField.getValues();
 
-		Rexp.REXP levels = attribute(y, "levels");
+		Rexp.REXP levels = REXPUtil.attribute(y, "levels");
 
 		for(int i = 0; i < levels.getStringValueCount(); i++){
 			STRING level = levels.getStringValue(i);
@@ -695,43 +612,6 @@ public class RandomForestConverter {
 		return values.get(i);
 	}
 
-	public File getInput(){
-		return this.input;
-	}
-
-	public void setInput(File input){
-
-		if(input == null){
-			throw new NullPointerException();
-		}
-
-		this.input = input;
-	}
-
-	public File getOutput(){
-		return this.output;
-	}
-
-	public void setOutput(File output){
-
-		if(output == null){
-			throw new NullPointerException();
-		}
-
-		this.output = output;
-	}
-
-	static
-	private String formatValue(Number number){
-		double value = number.doubleValue();
-
-		if(DoubleMath.isMathematicalInteger(value)){
-			return Long.toString(number.longValue());
-		}
-
-		return Double.toString(value);
-	}
-
 	static
 	private String formatArrayValue(List<Value> values, Integer split, boolean leftDaughter){
 		StringBuilder sb = new StringBuilder();
@@ -791,41 +671,6 @@ public class RandomForestConverter {
 	}
 
 	static
-	private Rexp.REXP field(Rexp.REXP rexp, String name){
-		Rexp.REXP names = attribute(rexp, "names");
-
-		List<String> fields = new ArrayList<String>();
-
-		for(int i = 0; i < names.getStringValueCount(); i++){
-			STRING nameValue = names.getStringValue(i);
-
-			if((name).equals(nameValue.getStrval())){
-				return rexp.getRexpValue(i);
-			}
-
-			fields.add(nameValue.getStrval());
-		}
-
-		throw new IllegalArgumentException("Field " + name + " not in " + fields);
-	}
-
-	static
-	private Rexp.REXP attribute(Rexp.REXP rexp, String name){
-		List<String> attributes = new ArrayList<String>();
-
-		for(int i = 0; i < rexp.getAttrNameCount(); i++){
-
-			if((rexp.getAttrName(i)).equals(name)){
-				return rexp.getAttrValue(i);
-			}
-
-			attributes.add(rexp.getAttrName(i));
-		}
-
-		throw new IllegalArgumentException("Attribute " + name + " not in " + attributes);
-	}
-
-	static
 	private List<Integer> getIndices(Rexp.REXP rexp){
 		List<Integer> intValues = rexp.getIntValueList();
 		if(intValues.size() > 0){
@@ -846,27 +691,6 @@ public class RandomForestConverter {
 		}
 
 		throw new IllegalArgumentException();
-	}
-
-	static
-	private Integer asInteger(Number number){
-
-		if(number instanceof Integer){
-			return (Integer)number;
-		}
-
-		double value = number.doubleValue();
-
-		if(DoubleMath.isMathematicalInteger(value)){
-			return number.intValue();
-		}
-
-		throw new IllegalArgumentException();
-	}
-
-	static
-	private Double asDouble(Number number){
-		return (Double)number;
 	}
 
 	static

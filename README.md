@@ -32,9 +32,9 @@ Build the project using [Apache Maven] (http://maven.apache.org/):
 mvn clean install
 ```
 
-The build produces an uber-JAR file `target/export-1.0-SNAPSHOT.jar`, which contains a Java conversion application for every supported R model type. The conversion of RF models is handled by the class `org.jpmml.export.RandomForestConverter` (supports both regression- and classification-type models).
+The build produces an executable uber-JAR file `target/export-1.0-SNAPSHOT.jar`.
 
 Converting the ProtoBuf file `rf.pb` to a PMML file `rf.pmml`:
 ```
-java -Xms2048M -Xmx2048M -cp target/export-1.0-SNAPSHOT.jar org.jpmml.export.RandomForestConverter --pb-file rf.pb --pmml-file rf.pmml
+java -Xms2048M -Xmx2048M -jar target/export-1.0-SNAPSHOT.jar --pb-file rf.pb --pmml-file rf.pmml
 ```
