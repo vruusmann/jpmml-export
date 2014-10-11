@@ -11,8 +11,10 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import javax.xml.transform.stream.StreamResult;
@@ -196,21 +198,40 @@ public class RandomForestConverter {
 			initNonFormulaFields(xlevels, ncat, y);
 		}
 
+		PMML pmml;
+
 		STRING typeValue = type.getStringValue(0);
 
 		if("regression".equals(typeValue.getStrval())){
-			return convertRegression(forest);
+			pmml = convertRegression(forest);
 		} else
 
 		if("classification".equals(typeValue.getStrval())){
 			Rexp.REXP y = field(randomForest, "y");
 
-			return convertClassification(forest, y);
+			pmml = convertClassification(forest, y);
 		} else
 
 		{
 			throw new IllegalArgumentException();
 		}
+
+		FieldTypeAnalyzer fieldTypeAnalyzer = new FieldTypeAnalyzer();
+		pmml.accept(fieldTypeAnalyzer);
+
+		List<DataField> dataFields = this.dataFields;
+		for(DataField dataField : dataFields){
+			DataType dataType = fieldTypeAnalyzer.getDataType(dataField.getName());
+
+			// An unused field
+			if(dataType == null){
+				continue;
+			}
+
+			dataField = initDataField(dataField, dataType);
+		}
+
+		return pmml;
 	}
 
 	private PMML convertRegression(Rexp.REXP forest){
@@ -389,18 +410,15 @@ public class RandomForestConverter {
 			String type = dataClass.getStrval();
 
 			if("factor".equals(type)){
-				dataField = dataField.withDataType(DataType.STRING)
-					.withOptype(OpType.CATEGORICAL);
-			} else
-
-			if("logical".equals(type)){
-				dataField = dataField.withDataType(DataType.BOOLEAN)
-					.withOptype(OpType.CATEGORICAL);
+				dataField = initDataField(dataField, DataType.STRING);
 			} else
 
 			if("numeric".equals(type)){
-				dataField = dataField.withDataType(DataType.DOUBLE)
-					.withOptype(OpType.CONTINUOUS);
+				dataField = initDataField(dataField, DataType.DOUBLE);
+			} else
+
+			if("logical".equals(type)){
+				dataField = initDataField(dataField, DataType.BOOLEAN);
 			} else
 
 			{
@@ -421,13 +439,11 @@ public class RandomForestConverter {
 			boolean classification = (y != null);
 
 			if(classification){
-				dataField = dataField.withDataType(DataType.STRING)
-					.withOptype(OpType.CATEGORICAL);
+				dataField = initDataField(dataField, DataType.STRING);
 			} else
 
 			{
-				dataField = dataField.withDataType(DataType.DOUBLE)
-					.withOptype(OpType.CONTINUOUS);
+				dataField = initDataField(dataField, DataType.DOUBLE);
 			}
 
 			this.dataFields.add(dataField);
@@ -444,16 +460,31 @@ public class RandomForestConverter {
 
 			boolean categorical = (ncat.getIntValue(i) > 1);
 			if(categorical){
-				dataField = dataField.withDataType(DataType.STRING)
-					.withOptype(OpType.CATEGORICAL);
+				dataField = initDataField(dataField, DataType.STRING);
 			} else
 
 			{
-				dataField = dataField.withDataType(DataType.DOUBLE)
-					.withOptype(OpType.CONTINUOUS);
+				dataField = initDataField(dataField, DataType.DOUBLE);
 			}
 
 			this.dataFields.add(dataField);
+		}
+	}
+
+	private DataField initDataField(DataField dataField, DataType dataType){
+
+		switch(dataType){
+			case STRING:
+				return dataField.withDataType(DataType.STRING)
+					.withOptype(OpType.CATEGORICAL);
+			case DOUBLE:
+				return dataField.withDataType(DataType.DOUBLE)
+					.withOptype(OpType.CONTINUOUS);
+			case BOOLEAN:
+				return dataField.withDataType(DataType.BOOLEAN)
+					.withOptype(OpType.CATEGORICAL);
+			default:
+				throw new IllegalArgumentException();
 		}
 	}
 
@@ -509,7 +540,7 @@ public class RandomForestConverter {
 			DataField dataField = this.dataFields.get(i);
 
 			MiningField miningField = new MiningField(dataField.getName())
-				.withUsageType(i == 0 ? FieldUsageType.TARGET : FieldUsageType.ACTIVE);
+				.withUsageType(i == 0 ? FieldUsageType.TARGET : null);
 
 			miningFields.add(miningField);
 		}
@@ -611,18 +642,18 @@ public class RandomForestConverter {
 
 		DataType dataType = dataField.getDataType();
 
-		if((DataType.BOOLEAN).equals(dataType)){
-			simplePredicate = new SimplePredicate()
-				.withField(dataField.getName())
-				.withOperator(SimplePredicate.Operator.EQUAL)
-				.withValue(split.doubleValue() <= 0.5d ? Boolean.toString(!leftDaughter) : Boolean.toString(leftDaughter));
-		} else
-
 		if((DataType.DOUBLE).equals(dataType)){
 			simplePredicate = new SimplePredicate()
 				.withField(dataField.getName())
 				.withOperator(leftDaughter ? SimplePredicate.Operator.LESS_OR_EQUAL : SimplePredicate.Operator.GREATER_THAN)
 				.withValue(formatValue(split));
+		} else
+
+		if((DataType.BOOLEAN).equals(dataType)){
+			simplePredicate = new SimplePredicate()
+				.withField(dataField.getName())
+				.withOperator(SimplePredicate.Operator.EQUAL)
+				.withValue(split.doubleValue() <= 0.5d ? Boolean.toString(!leftDaughter) : Boolean.toString(leftDaughter));
 		} else
 
 		{
@@ -918,6 +949,89 @@ public class RandomForestConverter {
 
 		public Set<FieldName> getFields(){
 			return this.fields;
+		}
+	}
+
+	static
+	private class FieldTypeAnalyzer extends AbstractVisitor {
+
+		private Map<FieldName, DataType> fieldDataTypes = new LinkedHashMap<FieldName, DataType>();
+
+
+		@Override
+		public VisitorAction visit(SimpleSetPredicate simpleSetPredicate){
+			FieldName field = simpleSetPredicate.getField();
+
+			addDataType(field, DataType.STRING);
+
+			return super.visit(simpleSetPredicate);
+		}
+
+		@Override
+		public VisitorAction visit(SimplePredicate simplePredicate){
+			FieldName field = simplePredicate.getField();
+			SimplePredicate.Operator operator = simplePredicate.getOperator();
+			String value = simplePredicate.getValue();
+
+			if((SimplePredicate.Operator.EQUAL).equals(operator) && (("true").equals(value) || ("false").equals(value))){
+				addDataType(field, DataType.BOOLEAN);
+			} else
+
+			if((SimplePredicate.Operator.LESS_OR_EQUAL).equals(operator) && ("0.5").equals(value)){
+				addDataType(field, DataType.BOOLEAN);
+			} else
+
+			if((SimplePredicate.Operator.GREATER_THAN).equals(operator) && ("0.5").equals(value)){
+				addDataType(field, DataType.BOOLEAN);
+			} else
+
+			{
+				addDataType(field, DataType.DOUBLE);
+			}
+
+			return super.visit(simplePredicate);
+		}
+
+		private void addDataType(FieldName field, DataType dataType){
+			DataType fieldDataType = this.fieldDataTypes.get(field);
+			if(fieldDataType == null){
+				this.fieldDataTypes.put(field, dataType);
+
+				return;
+			}
+
+			switch(fieldDataType){
+				case STRING:
+					return;
+				case DOUBLE:
+					switch(dataType){
+						case STRING:
+							this.fieldDataTypes.put(field, dataType);
+							return;
+						case DOUBLE:
+						case BOOLEAN:
+							return;
+						default:
+							throw new IllegalArgumentException();
+					}
+				case BOOLEAN:
+					switch(dataType){
+						case STRING:
+						case DOUBLE:
+							this.fieldDataTypes.put(field, dataType);
+							return;
+						case BOOLEAN:
+							return;
+						default:
+							throw new IllegalArgumentException();
+					}
+				default:
+					return;
+			}
+		}
+
+		public DataType getDataType(FieldName field){
+			return this.fieldDataTypes.get(field);
 		}
 	}
 }
