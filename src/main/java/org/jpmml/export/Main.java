@@ -94,6 +94,10 @@ public class Main {
 	private PMML convert(Rexp.REXP rexp){
 		Converter converter;
 
+		if(REXPUtil.inherits(rexp, "kmeans")){
+			converter = new KMeansConverter();
+		} else
+
 		if(REXPUtil.inherits(rexp, "randomForest")){
 			converter = new RandomForestConverter();
 		} else

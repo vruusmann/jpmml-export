@@ -15,6 +15,22 @@ public class REXPUtil {
 	}
 
 	static
+	public <E> List<E> getRow(List<E> matrix, int k, int rows, int columns){
+		List<E> row = new ArrayList<E>();
+
+		for(int i = 0; i < columns; i++){
+			row.add(matrix.get((i * rows) + k));
+		}
+
+		return row;
+	}
+
+	static
+	public <E> List<E> getColumn(List<E> matrix, int k, int rows, int columns){
+		return matrix.subList(k * rows, (k * rows) + rows);
+	}
+
+	static
 	public boolean inherits(Rexp.REXP rexp, String name){
 		Rexp.REXP clazz = REXPUtil.attribute(rexp, "class");
 

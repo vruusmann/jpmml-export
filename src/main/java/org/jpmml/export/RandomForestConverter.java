@@ -184,12 +184,12 @@ public class RandomForestConverter extends Converter {
 		for(int i = 0; i < columns; i++){
 			TreeModel treeModel = encodeTreeModel(
 					MiningFunctionType.REGRESSION,
-					sublist(leftDaughterIndices, i, rows, columns),
-					sublist(rightDaughterIndices, i, rows, columns),
+					REXPUtil.getColumn(leftDaughterIndices, i, rows, columns),
+					REXPUtil.getColumn(rightDaughterIndices, i, rows, columns),
 					scoreEncoder,
-					sublist(nodepred.getRealValueList(), i, rows, columns),
-					sublist(bestvarIndices, i, rows, columns),
-					sublist(xbestsplit.getRealValueList(), i, rows, columns)
+					REXPUtil.getColumn(nodepred.getRealValueList(), i, rows, columns),
+					REXPUtil.getColumn(bestvarIndices, i, rows, columns),
+					REXPUtil.getColumn(xbestsplit.getRealValueList(), i, rows, columns)
 				);
 
 			treeModels.add(treeModel);
@@ -231,16 +231,16 @@ public class RandomForestConverter extends Converter {
 		List<TreeModel> treeModels = new ArrayList<TreeModel>();
 
 		for(int i = 0; i < columns; i++){
-			List<Integer> daughters = sublist(treemapIndices, i, 2 * rows, columns);
+			List<Integer> daughters = REXPUtil.getColumn(treemapIndices, i, 2 * rows, columns);
 
 			TreeModel treeModel = encodeTreeModel(
 					MiningFunctionType.CLASSIFICATION,
-					sublist(daughters, 0, rows, columns),
-					sublist(daughters, 1, rows, columns),
+					REXPUtil.getColumn(daughters, 0, rows, columns),
+					REXPUtil.getColumn(daughters, 1, rows, columns),
 					scoreEncoder,
-					sublist(nodepredIndices, i, rows, columns),
-					sublist(bestvarIndices, i, rows, columns),
-					sublist(xbestsplit.getRealValueList(), i, rows, columns)
+					REXPUtil.getColumn(nodepredIndices, i, rows, columns),
+					REXPUtil.getColumn(bestvarIndices, i, rows, columns),
+					REXPUtil.getColumn(xbestsplit.getRealValueList(), i, rows, columns)
 				);
 
 			treeModels.add(treeModel);
@@ -252,12 +252,7 @@ public class RandomForestConverter extends Converter {
 	private PMML encodePMML(MiningFunctionType miningFunction, List<TreeModel> treeModels){
 		DataDictionary dataDictionary = encodeDataDictionary();
 
-		PMML pmml = new PMML(new Header(), dataDictionary, "4.2");
-
 		MiningSchema miningSchema = encodeMiningSchema();
-
-		MiningModel miningModel = new MiningModel(miningSchema, miningFunction);
-		pmml = pmml.withModels(miningModel);
 
 		MultipleModelMethodType multipleModelMethod;
 
@@ -273,7 +268,6 @@ public class RandomForestConverter extends Converter {
 		}
 
 		Segmentation segmentation = new Segmentation(multipleModelMethod);
-		miningModel = miningModel.withSegmentation(segmentation);
 
 		for(int i = 0; i < treeModels.size(); i++){
 			TreeModel treeModel = treeModels.get(i);
@@ -286,6 +280,12 @@ public class RandomForestConverter extends Converter {
 
 			segmentation = segmentation.withSegments(segment);
 		}
+
+		MiningModel miningModel = new MiningModel(miningSchema, miningFunction)
+			.withSegmentation(segmentation);
+
+		PMML pmml = new PMML(new Header(), dataDictionary, "4.2")
+			.withModels(miningModel);
 
 		return pmml;
 	}
@@ -691,11 +691,6 @@ public class RandomForestConverter extends Converter {
 		}
 
 		throw new IllegalArgumentException();
-	}
-
-	static
-	private <E> List<E> sublist(List<E> list, int i, int rows, int columns){
-		return list.subList(i * rows, (i * rows) + rows);
 	}
 
 	static
