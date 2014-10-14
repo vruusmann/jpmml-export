@@ -36,5 +36,5 @@ The build produces an executable uber-JAR file `target/export-1.0-SNAPSHOT.jar`.
 
 Converting the ProtoBuf file `rf.pb` to a PMML file `rf.pmml`:
 ```
-java -Xms2048M -Xmx2048M -jar target/export-1.0-SNAPSHOT.jar --pb-file rf.pb --pmml-file rf.pmml
+java -Xms2048M -Xmx2048M -jar target/export-1.0-SNAPSHOT.jar --pb-input rf.pb --pmml-output rf.pmml
 ```

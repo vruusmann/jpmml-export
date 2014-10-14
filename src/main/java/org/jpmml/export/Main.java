@@ -22,14 +22,14 @@ import rexp.Rexp;
 public class Main {
 
 	@Parameter (
-		names = "--pb-file",
+		names = "--pb-input",
 		description = "ProtoBuf input file",
 		required = true
 	)
 	private File input = null;
 
 	@Parameter (
-		names = "--pmml-file",
+		names = "--pmml-output",
 		description = "PMML output file",
 		required = true
 	)
