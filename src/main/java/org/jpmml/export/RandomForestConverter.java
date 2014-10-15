@@ -6,6 +6,7 @@ package org.jpmml.export;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -16,6 +17,7 @@ import com.google.common.base.Function;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import org.dmg.pmml.AbstractVisitor;
 import org.dmg.pmml.Array;
@@ -250,10 +252,6 @@ public class RandomForestConverter extends Converter {
 	}
 
 	private PMML encodePMML(MiningFunctionType miningFunction, List<TreeModel> treeModels){
-		DataDictionary dataDictionary = encodeDataDictionary();
-
-		MiningSchema miningSchema = encodeMiningSchema();
-
 		MultipleModelMethodType multipleModelMethod;
 
 		switch(miningFunction){
@@ -267,11 +265,24 @@ public class RandomForestConverter extends Converter {
 				throw new IllegalArgumentException();
 		}
 
+		Set<FieldName> forestFields = new LinkedHashSet<FieldName>();
+
 		Segmentation segmentation = new Segmentation(multipleModelMethod);
 
 		for(int i = 0; i < treeModels.size(); i++){
 			TreeModel treeModel = treeModels.get(i);
-			treeModel = updateMiningSchema(treeModel);
+
+			Node root = treeModel.getNode();
+
+			FieldCollector fieldCollector = new FieldCollector();
+			root.accept(fieldCollector);
+
+			Set<FieldName> treeFields = fieldCollector.getFields();
+
+			forestFields.addAll(treeFields);
+
+			MiningSchema miningSchema = treeModel.getMiningSchema();
+			miningSchema = miningSchema.withMiningFields(encodeMiningFields(treeFields));
 
 			Segment segment = new Segment()
 				.withId(String.valueOf(i + 1))
@@ -281,6 +292,10 @@ public class RandomForestConverter extends Converter {
 			segmentation = segmentation.withSegments(segment);
 		}
 
+		DataDictionary dataDictionary = encodeDataDictionary(forestFields);
+
+		MiningSchema miningSchema = encodeMiningSchema(forestFields);
+
 		MiningModel miningModel = new MiningModel(miningSchema, miningFunction)
 			.withSegmentation(segmentation);
 
@@ -288,27 +303,6 @@ public class RandomForestConverter extends Converter {
 			.withModels(miningModel);
 
 		return pmml;
-	}
-
-	private TreeModel updateMiningSchema(TreeModel treeModel){
-		Node root = treeModel.getNode();
-
-		FieldCollector fieldCollector = new FieldCollector();
-		root.accept(fieldCollector);
-
-		List<MiningField> miningFields = new ArrayList<MiningField>();
-
-		Set<FieldName> fields = fieldCollector.getFields();
-		for(FieldName field : fields){
-			MiningField miningField = new MiningField(field);
-
-			miningFields.add(miningField);
-		}
-
-		MiningSchema miningSchema = treeModel.getMiningSchema();
-		miningSchema = addMiningFields(miningSchema, miningFields);
-
-		return treeModel.withMiningSchema(miningSchema);
 	}
 
 	private void initFormulaFields(Rexp.REXP terms){
@@ -441,30 +435,80 @@ public class RandomForestConverter extends Converter {
 		}
 	}
 
-	private DataDictionary encodeDataDictionary(){
+	private DataDictionary encodeDataDictionary(Set<FieldName> fields){
+		List<DataField> dataFields = Lists.newArrayList(this.dataFields.subList(1, this.dataFields.size()));
+
+		for(Iterator<DataField> it = dataFields.iterator(); it.hasNext(); ){
+			DataField dataField = it.next();
+
+			if(!(fields).contains(dataField.getName())){
+				it.remove();
+			}
+		}
+
+		Comparator<DataField> comparator = new Comparator<DataField>(){
+
+			@Override
+			public int compare(DataField left, DataField right){
+				return ((left.getName()).getValue()).compareTo((right.getName()).getValue());
+			}
+		};
+		Collections.sort(dataFields, comparator);
+
 		DataDictionary dataDictionary = new DataDictionary()
-			.withDataFields(this.dataFields);
+			.withDataFields(this.dataFields.subList(0, 1))
+			.withDataFields(dataFields);
 
 		return dataDictionary;
 	}
 
-	private MiningSchema encodeMiningSchema(){
-		MiningSchema miningSchema = new MiningSchema();
+	private MiningSchema encodeMiningSchema(Set<FieldName> fields){
+		DataField dataField = this.dataFields.get(0);
 
-		List<MiningField> miningFields = new ArrayList<MiningField>();
+		MiningField targetField = new MiningField(dataField.getName())
+			.withUsageType(FieldUsageType.TARGET);
 
-		for(int i = 0; i < this.dataFields.size(); i++){
-			DataField dataField = this.dataFields.get(i);
+		List<MiningField> activeFields = encodeMiningFields(fields);
 
-			MiningField miningField = new MiningField(dataField.getName())
-				.withUsageType(i == 0 ? FieldUsageType.TARGET : null);
-
-			miningFields.add(miningField);
-		}
-
-		miningSchema = addMiningFields(miningSchema, miningFields);
+		MiningSchema miningSchema = new MiningSchema()
+			.withMiningFields(Collections.singletonList(targetField))
+			.withMiningFields(activeFields);
 
 		return miningSchema;
+	}
+
+	private List<MiningField> encodeMiningFields(Set<FieldName> fields){
+		Function<FieldName, MiningField> function = new Function<FieldName, MiningField>(){
+
+			@Override
+			public MiningField apply(FieldName field){
+				return new MiningField(field);
+			}
+		};
+
+		List<MiningField> miningFields = Lists.newArrayList(Iterables.transform(fields, function));
+
+		Comparator<MiningField> comparator = new Comparator<MiningField>(){
+
+			@Override
+			public int compare(MiningField left, MiningField right){
+				boolean leftActive = (left.getUsageType()).equals(FieldUsageType.ACTIVE);
+				boolean rightActive = (right.getUsageType()).equals(FieldUsageType.ACTIVE);
+
+				if(leftActive && !rightActive){
+					return 1;
+				} // End if
+
+				if(!leftActive && rightActive){
+					return -1;
+				}
+
+				return ((left.getName()).getValue()).compareTo((right.getName()).getValue());
+			}
+		};
+		Collections.sort(miningFields, comparator);
+
+		return miningFields;
 	}
 
 	private <P extends Number> TreeModel encodeTreeModel(MiningFunctionType miningFunction, List<Integer> leftDaughter, List<Integer> rightDaughter, ScoreEncoder<P> scoreEncoder, List<P> nodepred, List<Integer> bestvar, List<Double> xbestsplit){
@@ -578,30 +622,6 @@ public class RandomForestConverter extends Converter {
 		}
 
 		return simplePredicate;
-	}
-
-	private MiningSchema addMiningFields(MiningSchema miningSchema, List<MiningField> miningFields){
-		Comparator<MiningField> comparator = new Comparator<MiningField>(){
-
-			@Override
-			public int compare(MiningField left, MiningField right){
-				boolean leftActive = (left.getUsageType()).equals(FieldUsageType.ACTIVE);
-				boolean rightActive = (right.getUsageType()).equals(FieldUsageType.ACTIVE);
-
-				if(leftActive && !rightActive){
-					return 1;
-				} // End if
-
-				if(!leftActive && rightActive){
-					return -1;
-				}
-
-				return ((left.getName()).getValue()).compareTo((right.getName()).getValue());
-			}
-		};
-		Collections.sort(miningFields, comparator);
-
-		return miningSchema.withMiningFields(miningFields);
 	}
 
 	private Value getLevel(int i){
